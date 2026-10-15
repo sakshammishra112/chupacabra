@@ -1,7 +1,8 @@
 name: Show GitHub IDs
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
