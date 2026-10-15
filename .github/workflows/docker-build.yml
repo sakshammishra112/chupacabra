@@ -1,31 +1,48 @@
-name: Docker build
+
+name: Docker Build and Push
 
 on:
-    workflow_run:
-        workflows: ["Python CI"]
-        types: [completed]
-        branches: [main]
+  workflow_run:
+    workflows: ["Python CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
-    contents: read
-    actions: read
+  contents: read
+  id-token: write
 
 jobs:
-    build:
-        if: >-
-            github.event.workflow_run.conclusion == 'success' && 
-            github.event.workflow_run.head_branch == 'main'
-        runs-on: ubuntu-latest
+  build-and-push:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == 'sakshammishra112/chupacabra'
 
-        steps:
-            - name: Checkout tested commit
-              uses: actions/checkout@v4
-              with:
-                ref: ${{ github.event.workflow_run.head_sha }}
+    runs-on: ubuntu-latest
 
-            - name: Build docker image
-              run: |
-                docker build \
-                  -t python-ci-lab:${{ github.event.workflow_run.head_sha }} \
-                  -t python-ci-lab:latest .
-            
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:${{ github.event.workflow_run.head_sha }}" \
+            -t "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:latest" .
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:${{ github.event.workflow_run.head_sha }}"
+          docker push "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:latest"
