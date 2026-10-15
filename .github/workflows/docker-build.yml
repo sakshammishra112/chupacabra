@@ -1,4 +1,25 @@
-
+# ---------------------------------------------------------------------------
+# Docker build & push workflow.
+#
+# Goal: once the "Python CI" workflow has passed on main, build a Docker
+# image of the app and push it to Azure Container Registry (ACR). This is
+# the "CD" half of the pipeline - it never runs on its own, it only runs
+# after CI has succeeded, which keeps a broken build from ever reaching
+# the registry.
+#
+# How the trigger works:
+# `workflow_run` fires whenever the named workflow ("Python CI") finishes,
+# on ANY branch and ANY outcome. The `if:` condition on the job below is
+# what actually restricts this to "only continue when that run succeeded,
+# on main, in this repo" - the `on:` trigger alone is not a filter.
+#
+# How auth works (no passwords/long-lived secrets involved):
+# `azure/login` uses OIDC - GitHub mints a short-lived token proving "this
+# is workflow X from repo Y", Azure AD trusts that token (because of a
+# federated credential set up on the Azure side), and hands back a login
+# session scoped to this run only. `id-token: write` below is what lets
+# this workflow request that token in the first place.
+# ---------------------------------------------------------------------------
 name: Docker Build and Push
 
 on:
@@ -9,18 +30,26 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # required for the OIDC login step to request a token
 
 jobs:
   build-and-push:
+    runs-on: ubuntu-latest
+
+    # Gate the entire job on three things:
+    #   1. the upstream CI run actually succeeded (not failed/cancelled)
+    #   2. it ran on main (not some feature branch)
+    #   3. it ran in this repo (not a fork, which could otherwise trigger
+    #      this workflow with attacker-controlled code)
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == 'sakshammishra112/chupacabra'
 
-    runs-on: ubuntu-latest
-
     steps:
+      # Check out the exact commit that CI tested - not whatever is
+      # latest on main right now - so what we build/push is guaranteed to
+      # be the commit that passed tests.
       - name: Checkout tested commit
         uses: actions/checkout@v4
         with:
@@ -36,14 +65,34 @@ jobs:
       - name: Login to ACR
         run: az acr login --name "${{ vars.ACR_NAME }}"
 
+      # Tag with both the commit SHA (immutable, traceable) and `latest`
+      # (a floating pointer to "whatever main most recently shipped").
       - name: Build Docker image
         run: |
           docker build \
             -t "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:${{ github.event.workflow_run.head_sha }}" \
             -t "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:latest" .
 
+      # Scan the image we just built for known OS/library vulnerabilities
+      # (CVEs) before it goes anywhere near the registry. This runs against
+      # the image already sitting in the local Docker daemon - no push has
+      # happened yet, so a bad scan still has time to stop the pipeline.
+      #
+      # `exit-code: '0'` means "report but don't fail the job" - this is
+      # intentionally non-blocking while you're starting out, so you can see
+      # what Trivy finds without your pipeline suddenly breaking on day one.
+      # Once you've triaged a few runs, flip it to '1' to make CRITICAL/HIGH
+      # findings actually fail the job and block the push below.
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:${{ github.event.workflow_run.head_sha }}"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: table
+
       - name: Push Docker image
         run: |
           docker push "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:${{ github.event.workflow_run.head_sha }}"
           docker push "${{ vars.ACR_LOGIN_SERVER }}/python-ci-lab:latest"
-          

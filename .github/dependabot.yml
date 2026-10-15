@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------------------
+# Dependabot: not a workflow you trigger - a bot GitHub runs for you.
+# Each week it checks the ecosystems below for newer/safer versions and
+# opens a PR per update, which then runs through your normal "Python CI"
+# workflow like any other PR. This is how you catch outdated or vulnerable
+# dependencies without manually checking for them.
+# ---------------------------------------------------------------------------
+version: 2
+updates:
+  # Keep Flask/gunicorn/pytest/ruff etc. (requirements*.txt) current.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Keep the actions used inside .github/workflows/*.yml current too -
+  # e.g. actions/checkout, azure/login, aquasecurity/trivy-action. These
+  # are dependencies just like pip packages, and get the same CVE/update
+  # treatment.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

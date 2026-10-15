@@ -1,3 +1,12 @@
+# ---------------------------------------------------------------------------
+# Diagnostic workflow - not part of the deploy pipeline.
+#
+# Goal: print out some of the built-in `github.*` context values GitHub
+# Actions makes available to every workflow, so you can see what they
+# look like for this repo without digging through the docs. Handy when
+# you're writing `if:` conditions elsewhere (like the repo-full-name check
+# in docker-build.yml) and want to confirm the actual values first.
+# ---------------------------------------------------------------------------
 name: Show GitHub IDs
 
 on:
@@ -13,6 +22,6 @@ jobs:
     steps:
       - name: Display repository and owner IDs
         run: |
-          echo "Repository ID: ${{ github.repository_id }}"
-          echo "Owner ID: ${{ github.repository_owner_id }}"
-          echo "Repository: ${{ github.repository }}"
+          echo "Repository ID: ${{ github.repository_id }}"       # numeric, stable even if the repo is renamed
+          echo "Owner ID: ${{ github.repository_owner_id }}"       # numeric ID of the user/org that owns the repo
+          echo "Repository: ${{ github.repository }}"             # "owner/name", e.g. sakshammishra112/chupacabra
